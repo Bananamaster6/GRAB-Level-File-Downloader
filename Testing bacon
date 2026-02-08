@@ -1,0 +1,44 @@
+from flask import Flask, jsonify, send_file, render_template
+import requests
+from bs4 import BeautifulSoup
+import io
+import re
+import base64
+
+app = Flask(__name__)
+
+BASE_URL = "https://grabvr.quest"
+
+@app.route("/")
+def home():
+    return render_template("index.html")
+
+@app.route("/levels")
+def list_levels():
+    r = requests.get(f"{BASE_URL}/levels?tab=tab_newest")
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    levels = []
+    for a in soup.select("a[href*='/levels/viewer?level=']"):
+        href = a["href"]
+        name = a.get_text(strip=True)
+        levels.append({
+            "name": name,
+            "id": href.split("level=")[-1]
+        })
+    return jsonify(levels)
+
+@app.route("/download/<level_id>")
+def download_level(level_id):
+    view_url = f"{BASE_URL}/levels/viewer?level={level_id}"
+    r = requests.get(view_url)
+    html = r.text
+
+    match = re.search(r'data-base64="([A-Za-z0-9+/=]+)"', html)
+    if match:
+        level_bytes = io.BytesIO(base64.b64decode(match.group(1)))
+        return send_file(level_bytes, download_name=f"{level_id}.level", as_attachment=True)
+    return "Level data not found", 404
+
+if __name__ == "__main__":
+    app.run(debug=True)
