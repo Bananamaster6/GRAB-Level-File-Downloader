@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>GrabVR Level Downloader</title>
+<link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+
+<h1>GrabVR Levels (Browser Download)</h1>
+<input type="text" id="search" placeholder="Search levels...">
+<ul id="ul"></ul>
+
+<script>
+let levelsData = [];
+
+// CORS proxy (required to fetch GrabVR pages from browser)
+const proxy = "https://cors-anywhere.herokuapp.com/";
+const grabvrUrl = "https://grabvr.quest/levels?tab=tab_newest";
+
+async function fetchLevels() {
+    try {
+        const res = await fetch(proxy + grabvrUrl);
+        const text = await res.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text, "text/html");
+
+        // Get first 50 levels
+        const links = doc.querySelectorAll("a[href*='/levels/viewer?level=']");
+        levelsData = Array.from(links).slice(0, 50).map(a => ({
+            name: a.textContent.trim(),
+            id: a.href.split("level=")[1]
+        }));
+        renderLevels();
+    } catch (err) {
+        console.error("Error fetching levels:", err);
+        const ul = document.getElementById("ul");
+        ul.innerHTML = "<li>Failed to load levels. CORS proxy may be required.</li>";
+    }
+}
+
+function renderLevels(filter = "") {
+    const ul = document.getElementById("ul");
+    ul.innerHTML = "";
+    levelsData
+        .filter(l => l.name.toLowerCase().includes(filter.toLowerCase()))
+        .forEach(l => {
+            const li = document.createElement("li");
+            const span = document.createElement("span");
+            span.textContent = l.name;
+
+            const button = document.createElement("button");
+            button.textContent = "Download .level";
+            button.onclick = () => downloadLevel(l.id, l.name);
+
+            li.appendChild(span);
+            li.appendChild(button);
+            ul.appendChild(li);
+        });
+}
+
+// Attempt to fetch level data and download
+async function downloadLevel(levelId, levelName) {
+    try {
+        const res = await fetch(proxy + `https://grabvr.quest/levels/viewer?level=${levelId}`);
+        const html = await res.text();
+
+        // Try to find base64-encoded level data
+        const match = html.match(/data-base64="([A-Za-z0-9+/=]+)"/);
+        if (match) {
+            const data = match[1];
+            const blob = new Blob([Uint8Array.from(atob(data), c=>c.charCodeAt(0))], {type: "application/octet-stream"});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${levelName || levelId}.level`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } else {
+            alert("Level data not found in-browser. Some levels may not support browser-only download.");
+        }
+    } catch (err) {
+        console.error(err);
+        alert("Error fetching level. Try using a CORS proxy or refresh.");
+    }
+}
+
+document.getElementById("search").addEventListener("input", e => renderLevels(e.target.value));
+
+// Auto-refresh every 5 minutes
+fetchLevels();
+setInterval(fetchLevels, 5 * 60 * 1000);
+</script>
+
+</body>
+</html>
